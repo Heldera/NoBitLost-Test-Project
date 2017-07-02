@@ -1,0 +1,13 @@
+{
+    "model-id": "Test", 
+    "agent-file": "src\\agent\\agent.nut", 
+    "builder-settings": {
+        "variable-definitions": {}, 
+        "builder_cli_path": "C:\\Users\\OlgaGig\\Application Data\\npm\\node_modules\\Builder\\src\\cli.js"
+    }, 
+    "device-file": [
+        "src\\device\\device.nut", 
+        "src\\device\\d_ledMood.nut"
+    ], 
+    "device-id": "2340666938a609ee"
+}
