@@ -7,6 +7,17 @@ const INTERVAL_SECONDS = 10;
 spi <- null;
 led <- null;
 colors <- null;
+current <- 0;
+currentMode <- null;
+currentColor <- null;
+
+enum modes{
+	blink,          //(0,0,0) -> (1,1,1) -> (0,0,0)
+	sequential,     //(0,0,0) -> (0,0,1) -> (0,1,0) -> (0,1,1) -> (1,0,0) ->(1,0,1) -> (1,1,0) -> (1,1,1)
+	overlay,        //(0,0,0) -> (1,0,0) -> (1,1,0) -> (1,1,1) -> (0,1,1) ->(0,0,1) -> (0,0,0)
+	random          //depends on time
+};
+currentMode = "random";
 
 // Instance the Si702x and save a reference in tempHumidSensor
 hardware.i2c89.configure(CLOCK_SPEED_400_KHZ);
@@ -20,58 +31,112 @@ hardware.pin1.configure(DIGITAL_OUT, 1);
 // Set up the RGB LED
 led = WS2812(spi, 1);
 
-function reportTemp(temp) {
-    agent.send("senddata", temp );
+//Fill array of led color
+colors = {};
+colors[0] <- [0,0,0];
+colors[1] <- [0,0,255];
+colors[2] <- [0,255,0];
+colors[3] <- [0,255,255];
+colors[4] <- [255,0,0];
+colors[5] <- [255,0,255];
+colors[6] <- [255,255,0];
+colors[7] <- [255,255,255];
+
+currentColor = colors[0];
+
+function getNextColor(mode){
+	switch(mode){
+		case "blink" : 
+			blink(); 
+			break;
+		case "sequential": 
+			sequential(); 
+			break;
+		case "overlay" : 
+			overlay(); 
+			break;
+		default : 
+			getRandomColor();
+	}
+	return colors[current];
 }
 
-// Define the loop flash function
-function setLedState(state, colorRGB) {
-    local color = state ? colorRGB : [0,0,0];
-    led.set(0, color).draw();
-    server.log("New color is: " + color[0] + " " + color[1] + " " + color[2]);
+function blink(){
+	if(current == 0){
+		current = 7;
+	} else {
+		current = 0;
+	}
 }
 
-function getTemp() {
-    // Create a Squirrel table to hold the data - handy if we 
-    // later want to package up other data from other sensors
-    local data = {};
+function sequential(){
+	if(current == 7){
+		current = 0;
+	}else{
+		current++;
+	}
+}
 
-    data.ledColor <- getColor(modes.blink);
-    setLedState(true, data.ledColor);
-    // Log the led color for debug
-    server.log("Led setted color: " + data.ledColor[0]+" "+ data.ledColor[1]+" "+data.ledColor[2]);
-    tempHumidSensor.read(function(reading) {
-        // The read() method is passed a function which will be
-        // called when the temperature data has been gathered.
-        // This 'callback' function also needs to handle our
-        // housekeeping: flash the LED to show a reading has
-        // been taken; send the data to the agent; 
-        // put the device to sleep
-        
-        // Check for errors returned from the sensor class
-        // This can occur if hardware is defective or improperly connected
-        if ("err" in reading) {
-            // if an error is detected, log the error message so we can fix it
-            server.error("Error reading temperature: "+reading.err);
-        } else {
-            // Get the temperature using the Si7020 object’s readTemp() method
-            // Add the temperature using Squirrel’s 'new key' operator
-            data.temp <- reading.temperature;
+function overlay(){
+	switch(current){
+		case 0 : current = 4; break;
+		case 4 : current = 6; break;
+		case 6 : current = 7; break;
+		case 7 : current = 3; break;
+		case 3 : current = 1; break;
+		default : current = 0;
+	}
+}
+
+function getRandomColor(){
+    local t = time();
+    current = t % 8;
+}
+
+function reportData(data) {
+    agent.send("senddata", data );
+}
+
+function updateLedMode(mode){
+    if(mode != currentMode){
+        currentMode = mode;
+    }
+}
+
+function setLedState(colorRGB) {
+    led.set(0, colorRGB).draw();
+    server.log("New color is: " + colorRGB[0] + " " + colorRGB[1] + " " + colorRGB[2]);
+}
+
+function getData(){
+    currentColor <- getNextColor(currentMode);
+    setLedState(currentColor);
     
+    tempHumidSensor.read(getLedStatusAndReportTemp);
+    //sec
+    imp.wakeup(INTERVAL_SECONDS, getData);
+}
+
+function getLedStatusAndReportTemp(reading) {
+    if ("err" in reading) {
+            // if an error is detected, log the error message so we can fix it
+            server.error("Error reading temperature: " + reading.err);
+        } else {
+
+            local data = {};
+    
+            data.ledColor  <- currentColor;
+            
+            data.ledMode <- currentMode;
             // Send the imp's unique device ID as the key for our data stream
             data.id <- hardware.getdeviceid();
+        
+            data.temp <- reading.temperature;
+        
             
-            // Log the temperature for debug
-            server.log(format("Got temperature: %0.1f deg C", data.temp));
-            
-            
-            // make owl happy
-            reportTemp(data);
+            reportData(data);
         }
-    });
-
-    //sec
-    imp.wakeup(INTERVAL_SECONDS, getTemp);
 }
 
-getTemp();
+agent.on("updateMode", updateLedMode);
+getData();
