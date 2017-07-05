@@ -5,6 +5,9 @@ const INTERVAL_SECONDS = 3;
 const PUSH_DATA_URL = "https://dweet.io/dweet/for/Owl01";
 const RECIEVE_FEEDBACK_URL = "https://dweet.io/get/dweets/for/Owl01_callback";
 
+
+lastModeChanged <-"random";
+
 function httpPostWrapper (url, headers, string) {
     local request = http.post(url, headers, string);
     local response = request.sendsync();
@@ -26,7 +29,10 @@ function updateMode(){
     local callback = httpGetWrapper(RECIEVE_FEEDBACK_URL, {"Content-Type" : "application/json"});
     
     local callbackMode = (JSONParser.parse(callback.body)).with[0].content.mode;
-    device.send("updateMode", callbackMode);
+    if(lastModeChanged != callbackMode){
+        device.send("updateMode", callbackMode);
+        lastModeChanged = callbackMode;
+    }
     imp.wakeup(INTERVAL_SECONDS, updateMode);
 }
 
