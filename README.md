@@ -3,9 +3,23 @@
 
 Users interface represents on the web-page of the freeboard.io, which is service for visualization data from IoT devices. Page is public and can be viewed by anyone at the url: [freeboard.io](https://freeboard.io/board/lZxTjP)
 On this board presented 3 panes:
-1.	Sparkline (graph) of temperature. Values of temperature is reading from sensor on device.
-2.	State of led. The led on the device consists of 3 diodes for 3 colors: red, green, and blue. Led is changing state according to the mode. In the pane, there are 3 indicators for 3 diodes of led. Current mode of led state changing marking below next pane.
-3.	Pane for manual led mode changing. There are 4 buttons on this pane for relevant modes:
+### 1.	Sparkline (graph) of temperature. 
+
+Values of temperature is reading from sensor on device.
+
+![Graph of temperature pane](http://savepic.ru/14708289.png)
+
+### 2.	State of led. 
+
+The led on the device consists of 3 diodes for 3 colors: red, green, and blue. Led is changing state according to the mode. In the pane, there are 3 indicators for 3 diodes of led.
+
+![State of led pane](http://savepic.ru/14745167.png)
+
+### 3.	Pane for manual led mode changing. 
+
+There are 4 buttons on this pane for relevant modes. Current mode of led state changing marking below the pane.
+
+![Pane for manual led mode changing](http://savepic.ru/14713423.png)
 
 Name | Discription | State model
 -----|-------------|------------
