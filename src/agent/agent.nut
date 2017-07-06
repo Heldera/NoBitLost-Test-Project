@@ -27,12 +27,25 @@ function httpGetWrapper (url, header) {
 
 function updateMode(){
     local callback = httpGetWrapper(RECIEVE_FEEDBACK_URL, {"Content-Type" : "application/json"});
-    
-    local callbackMode = (JSONParser.parse(callback.body)).with[0].content.mode;
-    if(lastModeChanged != callbackMode){
-        device.send("updateMode", callbackMode);
-        lastModeChanged = callbackMode;
+    if(callback.statuscode == 200){
+        local responsObj = (JSONParser.parse(callback.body));
+        if (responsObj.rawin("with")) {
+            if (responsObj.with.len() > 0) {
+                local callbackMode = responsObj.with[0].content.mode;
+                if(lastModeChanged != callbackMode){
+                    device.send("updateMode", callbackMode);
+                    lastModeChanged = callbackMode;
+                }
+            } else{
+                server.log("Field \"with\" is empty");   
+            }
+        }else{
+            server.log("Field \"with\" is missing");
+        }
+    }else{
+        server.log("dweet statuscode : " + callback.statuscode);
     }
+    
     imp.wakeup(INTERVAL_SECONDS, updateMode);
 }
 
