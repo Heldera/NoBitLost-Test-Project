@@ -1,142 +1,99 @@
-#require "ws2812.class.nut:3.0.0"
-#require "Si702x.class.nut:1.0.0"
+@include "github:electricimp/WS2812/WS2812.class.nut"
+@include "github:electricimp/Si702x/Si702x.class.nut"
+@include "github:electricimp/HTS221/HTS221.device.lib.nut"
+
+@include "src/Color.nut"
+@include "src/LedColor.nut"
+
 // How long to wait between taking readings
 const INTERVAL_SECONDS = 10;
 
-// Set up global variables
-spi <- null;
-led <- null;
-colors <- null;
-current <- 0;
-currentMode <- null;
-currentColor <- null;
+class DeviceClass {
 
-enum modes{
-	blink,          //(0,0,0) -> (1,1,1) -> (0,0,0)
-	sequential,     //(0,0,0) -> (0,0,1) -> (0,1,0) -> (0,1,1) -> (1,0,0) ->(1,0,1) -> (1,1,0) -> (1,1,1)
-	overlay,        //(0,0,0) -> (1,0,0) -> (1,1,0) -> (1,1,1) -> (0,1,1) ->(0,0,1) -> (0,0,0)
-	random          //depends on time
-};
-currentMode = "random";
-
-// Instance the Si702x and save a reference in tempHumidSensor
-hardware.i2c89.configure(CLOCK_SPEED_400_KHZ);
-local tempHumidSensor = Si702x(hardware.i2c89);
-
-// Set up the SPI bus the RGB LED connects to
-spi = hardware.spi257;
-spi.configure(MSB_FIRST, 7500);
-hardware.pin1.configure(DIGITAL_OUT, 1);
-
-// Set up the RGB LED
-led = WS2812(spi, 1);
-
-//Fill array of led color
-colors = {};
-colors[0] <- [0,0,0];
-colors[1] <- [0,0,255];
-colors[2] <- [0,255,0];
-colors[3] <- [0,255,255];
-colors[4] <- [255,0,0];
-colors[5] <- [255,0,255];
-colors[6] <- [255,255,0];
-colors[7] <- [255,255,255];
-
-currentColor = colors[0];
-
-function getNextColor(mode){
-	switch(mode){
-		case "blink" : 
-			blink(); 
-			break;
-		case "sequential": 
-			sequential(); 
-			break;
-		case "overlay" : 
-			overlay(); 
-			break;
-		default : 
-			getRandomColor();
-	}
-	return colors[current];
-}
-
-function blink(){
-	if(current == 0){
-		current = 7;
-	} else {
-		current = 0;
-	}
-}
-
-function sequential(){
-	if(current == 7){
-		current = 0;
-	}else{
-		current++;
-	}
-}
-
-function overlay(){
-	switch(current){
-		case 0 : current = 4; break;
-		case 4 : current = 6; break;
-		case 6 : current = 7; break;
-		case 7 : current = 3; break;
-		case 3 : current = 1; break;
-		default : current = 0;
-	}
-}
-
-function getRandomColor(){
-    local t = time();
-    current = t % 8;
-}
-
-function reportData(data) {
-    agent.send("senddata", data );
-}
-
-function updateLedMode(mode){
-    if(mode != currentMode){
-        currentMode = mode;
-    }
-}
-
-function setLedState(colorRGB) {
-    led.set(0, colorRGB).draw();
-    server.log("New color is: " + colorRGB[0] + " " + colorRGB[1] + " " + colorRGB[2]);
-}
-
-function getData(){
-    currentColor <- getNextColor(currentMode);
-    setLedState(currentColor);
+    _tempHumidSensor = null;
+    _led = null;
+    _logger = null;
+    _currentMode = "random";
     
-    tempHumidSensor.read(getLedStatusAndReportTemp);
-    //sec
-    imp.wakeup(INTERVAL_SECONDS, getData);
-}
+    constructor(tempHumidSensor, led, logger){
+        this._tempHumidSensor = tempHumidSensor;        
+        this._led = led;
+        this._logger = logger;
 
-function getLedStatusAndReportTemp(reading) {
-    if ("err" in reading) {
+    }
+
+    function updateLedMode(mode) {
+    	_logger.log("last mode " + _currentMode);
+    	_logger.log("new mode " + mode);
+        if(mode != _currentMode) {
+            _currentMode = mode;
+        }
+    }
+
+    function getData() {
+        local color = LedColor.getNextColor(_currentMode);
+        Color.setCurrentColor(color);
+        _setLedState(color);
+        
+        _tempHumidSensor.read(_getLedStatusAndReportTemp.bindenv(this));
+
+        imp.wakeup(INTERVAL_SECONDS, getData.bindenv(this));
+    }
+
+    // -------------------- PRIVATE METHODS -------------------- //
+
+    function _setLedState(colorRGB) {
+        _logger.log("New color is: " + Color.printCurrentColor());
+        _led.set(0, colorRGB).draw();
+    }
+
+    function _getLedStatusAndReportTemp(reading) {
+        if ("err" in reading) {
             // if an error is detected, log the error message so we can fix it
-            server.error("Error reading temperature: " + reading.err);
+            _logger.error("Error reading temperature: " + reading.err);
         } else {
 
             local data = {};
-    
-            data.ledColor  <- currentColor;
-            
-            data.ledMode <- currentMode;
+        
+            data.ledColor  <- Color.getCurrentColor();
+                
+            data.ledMode <- _currentMode;
             // Send the imp's unique device ID as the key for our data stream
             data.id <- hardware.getdeviceid();
-        
-            data.temp <- reading.temperature;
-        
             
-            reportData(data);
+            data.temp <- reading.temperature;
+                
+            _reportData(data);
         }
+    }
+
+    function _reportData(data) {
+        agent.send("senddata", data);
+    }
 }
 
-agent.on("updateMode", updateLedMode);
-getData();
+function getHumidSensorHardwareConfiguration(){
+    // Instance the Si702x and save a reference in tempHumidSensor
+    hardware.i2c89.configure(CLOCK_SPEED_400_KHZ);
+    local tempHumidSensor = HTS221(hardware.i2c89);
+    tempHumidSensor.setMode(HTS221_MODE.ONE_SHOT, 0);
+    return tempHumidSensor;
+}
+
+function getLedHardwareConfiguration(){
+    // Set up the SPI bus the RGB LED connects to
+    local spi = hardware.spi257;
+    spi.configure(MSB_FIRST, 7500);
+    hardware.pin1.configure(DIGITAL_OUT, 1);
+    // Set up the RGB LED
+    return WS2812(spi, 1);
+}
+
+_dc <- DeviceClass(getHumidSensorHardwareConfiguration(), 
+                    //HTS221(hardware.i2c89),
+                    getLedHardwareConfiguration()
+                    server
+                    );
+_dc.getData();
+
+agent.on("updateMode", _dc.updateLedMode.bindenv(_dc));
